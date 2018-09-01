@@ -79,7 +79,7 @@ class AgentRequests(agentUri: String, agentPort: Int) {
 
   /**
     *
-    * @param checkId
+    * @param checkId The ID of the check to deregister.
     */
   def deRegisterCheckRequest(checkId: String): Request[String, Nothing] =
     sttp.put(combinedBase.path(agentCheckPath ::: "deregister" :: checkId :: Nil))
@@ -103,57 +103,60 @@ class AgentRequests(agentUri: String, agentPort: Int) {
       .response[Map[String, CheckResponse], Nothing](asJson[Map[String, CheckResponse]])
   }
 
+  private def putTtl(ttlType: String, checkId: String, note: String = "") = {
+    val uri = combinedBase.path(agentCheckPath ::: ttlType :: checkId :: Nil)
+    if (note.isEmpty) sttp.put(uri)
+    else sttp.put(uri.param("note", note))
+  }
+
   /**
-    *
-    * @param checkId
-    * @param note
-    * @return
+    * Sets the check to a "passing" state.
+    * @param checkId The ID of the check to update
+    * @param note A note to be included in the checks "output" property
     */
   def passTtlRequest(checkId: String, note: String = ""): Request[String, Nothing] =
-    sttp.put(combinedBase.path(agentCheckPath ::: "pass" :: checkId :: Nil))
-    .body(note)
+    putTtl("pass", checkId, note)
+
 
   /**
-    *
-    * @param checkId
-    * @param note
-    * @return
+    * Sets the check to a "warning" state.
+    * @param checkId The ID of the check to update
+    * @param note A note to be included in the checks "output" property
     */
   def warnTtlRequest(checkId: String, note: String = ""): Request[String, Nothing] =
-    sttp.put(combinedBase.path(agentCheckPath ::: "warn" :: checkId :: Nil))
-    .body(note)
+    putTtl("warn", checkId, note)
 
   /**
-    *
-    * @param checkId
-    * @param note
-    * @return
+    * Sets the check to a "critical" state
+    * @param checkId The ID of the check to update
+    * @param note A note to be included in the checks "output" property
     */
   def failTtlRequest(checkId: String, note: String = ""): Request[String, Nothing] =
-    sttp.put(combinedBase.path(agentCheckPath ::: "fail" :: checkId :: Nil))
-    .body(note)
+    putTtl("fail", checkId, note)
 
   /**
-    *
-    * @param checkId
-    * @param status
-    * @param output
-    * @return
+    * Updates the ttl with the provided status
+    * @param checkId The ID of the check to update
+    * @param status The status to which the check should be updated (valid statuses per the v1 api are "passing", "warning" or "critical").
+    * @param output The output that the check should display
     */
   def updateTtlRequest(checkId: String, status: String = "", output: String = ""): Request[String, Nothing] =
-    sttp.put(combinedBase.path(agentCheckPath ::: "update" :: checkId :: Nil))
-    .body(CheckUpdate(status, output))
+    putTtl("update", checkId)
+      .body(CheckUpdate(status, output))
 
   /**
     *
-    * @param serviceId
-    * @param enabled
-    * @param reasonText
-    * @return
+    * @param serviceId The serviceID on which to modify maintenance omde
+    * @param enabled whether maintenance mode is enabled or disabled
+    * @param reasonText the reason for maintenance mode
     */
   def maintenanceModeRequest(serviceId: String, enabled: Boolean, reasonText: Option[String] = None): Request[Unit, Nothing] = {
     // Add params; only append a reason if it is non-empty
-    val params = Seq("enable" -> enabled.toString) ++ (if(reasonText.exists(!_.isEmpty)) Seq("reason" -> reasonText.get) else Nil)
+    val params = Seq("enable" -> enabled.toString) ++
+      (reasonText match {
+        case Some(reason) if reason.nonEmpty => Seq("reason" -> reason)
+        case None => Nil
+      })
     sttp.put(combinedBase.path(agentServicePath ::: "maintenance" :: serviceId :: Nil).params(params.toMap)).response(ignore)
   }
 }

@@ -4,13 +4,9 @@ import com.typesafe.scalalogging.LazyLogging
 import org.dwrs.consul.requests.AgentModel._
 import org.scalatest._
 import monix.execution.Scheduler.Implicits.global
-import org.dwrs.consul.requests
 import org.dwrs.consul.requests.ConsulResponses
-import org.dwrs.consul.requests.ConsulResponses.Service
-import org.scalatest.words.ResultOfAfterWordApplication
 
-import scala.concurrent.{Await, Future}
-import scala.util.Failure
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 class TaskAgentClientSpec extends AsyncWordSpec
@@ -170,27 +166,73 @@ class TaskAgentClientSpec extends AsyncWordSpec
               passTtlChecksBody = passChecksList.body.right.value
               assertions = {
                 checksList.is200 should be(true)
-                logger.info(s"Checkslist code: ${checksList.code}")
-                logger.info("Pass ttl")
-                logger.info(s"Checks body: $checksBody")
-                logger.info(s"Searching for 'service:$testServiceIdPass'")
                 inside(checksBody.get(s"service:$testServiceIdPass")) {
                   case Some(c) => c.status should be("critical")
                     c.output should be("TTL expired")
                   case None => fail(s"Check should be present. Checks body: ${checksBody.keys}")
                 }
-                logger.info(s"Pass ttl code: ${passTtl.code}")
-                logger.info(s"Pass ttl code: ${passTtl.body}")
                 passTtl.is200 should be(true)
                 inside(passTtlChecksBody.get(s"service:$testServiceIdPass")) {
-                  case Some(c) => c.status should be("passing")
-                  //                  c.output should be("TTL expired")
+                  case Some(c) =>
+                    c.status should be("passing")
+                    c.output should be ("Test pass")
                   case None => fail("Check should be present")
                 }
               }
-              _ <- agentClient.deRegisterService(testServiceIdPass)
             } yield assertions).runAsync
           }
+        }
+
+        "be able to 'pass' ttl without providing a note" in {
+          (for {
+            noNoteTtl <- agentClient.passTtl(s"service:$testServiceIdPass")
+            noNoteChecksList <- agentClient.listChecks()
+            noNoteTtlChecksBody = noNoteChecksList.body.right.value
+            assertions = {
+              noNoteTtl.is200 should be(true)
+              inside(noNoteTtlChecksBody.get(s"service:$testServiceIdPass")) {
+                case Some(c) =>
+                  c.status should be ("passing")
+                  c.output.isEmpty should be (true)
+                case None => fail("Check should be present")
+              }
+            }
+          } yield assertions).runAsync
+        }
+
+        "be able to 'warn' ttl" in {
+          (for {
+            warnTtl <- agentClient.warnTtl(s"service:$testServiceIdPass", "Test warning")
+            warnChecksList <- agentClient.listChecks()
+            warnTtlChecksBody = warnChecksList.body.right.value
+            assertions = {
+              warnTtl.is200 should be(true)
+              inside(warnTtlChecksBody.get(s"service:$testServiceIdPass")) {
+                case Some(c) =>
+                  c.status should be ("warning")
+                  c.output should be ("Test warning")
+                case None => fail("Check should be present")
+              }
+            }
+          } yield assertions).runAsync
+        }
+
+        "be able to 'fail' ttl" in {
+          (for {
+            failTtl <- agentClient.failTtl(s"service:$testServiceIdPass", "Test fail")
+            failChecksList <- agentClient.listChecks()
+            failTtlChecksBody = failChecksList.body.right.value
+            assertions = {
+              failTtl.is200 should be(true)
+              inside(failTtlChecksBody.get(s"service:$testServiceIdPass")) {
+                case Some(c) =>
+                  c.status should be ("critical")
+                  c.output should be ("Test fail")
+                case None => fail("Check should be present")
+              }
+            }
+            _ <- agentClient.deRegisterService(testServiceIdPass)
+          } yield assertions).runAsync
         }
       }
     }
